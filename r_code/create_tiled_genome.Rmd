@@ -1,0 +1,104 @@
+---
+title: "create tiled genome"
+author: "Rick Farouni"
+date: "November 17, 2017"
+output: html_document
+---
+
+
+### Load Packages
+
+```{r}
+library(BSgenome.Hsapiens.UCSC.hg19)
+library(GenomicRanges)
+library(GenomicFiles)
+library(data.table)
+library(dplyr)
+```
+```{r}
+root_dir <- "/mnt/hd2/projects/histone_code/histone_code"
+annotations_dir <- file.path(root_dir,
+                             "data/annotations")
+```
+
+
+```{r , message=FALSE, warning=FALSE}
+
+dac_filepath <- file.path(annotations_dir,"consensusBlacklist.bed.gz")
+duke_filepath <- file.path(annotations_dir,"dukeExcludeRegions.bed.gz")
+gaps_filepath <- file.path(annotations_dir, "gap.txt.gz")
+
+download.file("http://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/gap.txt.gz",
+              gaps_filepath)
+download.file("http://hgdownload.cse.ucsc.edu/goldenPath/hg19/encodeDCC/wgEncodeMapability/wgEncodeDacMapabilityConsensusExcludable.bed.gz",
+              dac_filepath)
+download.file("http://hgdownload.cse.ucsc.edu/goldenPath/hg19/encodeDCC/wgEncodeMapability/wgEncodeDukeMapabilityRegionsExcludable.bed.gz",
+              duke_filepath)
+
+dac  <- fread(input = sprintf("zcat < %s", dac_filepath), sep = "\t")
+duke <- fread(input = sprintf("zcat < %s", duke_filepath), sep = "\t")
+gaps <- fread(input = sprintf("zcat < %s", gaps_filepath), sep = "\t")
+
+dac_grange <- GRanges(seqnames = dac$V1,
+                      ranges   = IRanges(start = dac$V2,
+                                         end = dac$V3))
+duke_grange <- GRanges(seqnames = duke$V1,
+                       ranges   = IRanges(start = duke$V2,
+                                          end = duke$V3))
+gaps_grange <- GRanges(seqnames = gaps$V2,
+                       ranges   = IRanges(start = gaps$V3,
+                                          end = gaps$V4))
+
+blacklist <- c(dac_grange,
+               duke_grange,
+               gaps_grange) %>%
+  reduce() %>%
+  keepStandardChromosomes(. ,
+                          pruning.mode = "tidy") %>%
+  dropSeqlevels(., 
+                paste0("chr", c("X", "Y","M")), 
+                pruning.mode = "tidy")
+
+blacklist 
+
+```
+
+
+
+```{r , message=FALSE, warning=FALSE}
+genome_size <- seqlengths(BSgenome.Hsapiens.UCSC.hg19)[seqlevels(blacklist)]
+genome_size
+```
+
+### create tiled genome
+
+```{r}
+tiled_genome <- genome_size %>%
+   tileGenome(., 
+                  tilewidth = 500,
+                  cut.last.tile.in.chrom = TRUE) %>%
+  subsetByOverlaps(.,
+                   blacklist,
+                   invert = TRUE)
+```
+
+### save to file
+
+```{r, eval = FALSE}
+as.data.frame(blacklist)[ ,1:3] %>%
+  fwrite(., 
+       file.path(annotations_dir, 
+                 "blacklist.bed"), 
+       col.names = FALSE,
+       sep = "\t")
+
+as.data.frame(tiled_genome)[ ,1:3] %>%
+  fwrite(., 
+       file.path(annotations_dir, 
+                 "hg19.500bp.bins.sorted.filtered.bed"), 
+       col.names = FALSE,
+       sep = "\t")
+```
+
+
+

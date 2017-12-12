@@ -1,0 +1,9 @@
+nose
+sphinx
+numpy
+pybedtools
+logging
+pandas
+tensorflow
+keras
+seaborn
